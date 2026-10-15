@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Data Flow SDK Example</title>
+  <style>
+    :root {
+      --bg: #f6f7f9; --surface: #ffffff; --text: #1d2530; --muted: #5b6878; --dim: #93a0ae;
+      --border: #dde2e8; --border-strong: #c5cdd6; --brand: #2e4057; --accent: #f29e4c;
+      --node-api: #7f8a99; --ok: #2e7d4f; --bad: #b4232f; --code-bg: #eef1f4;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text);
+           font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    main { max-width: 860px; margin: 0 auto; padding: 32px 16px 56px; }
+    h1 { margin: 0 0 4px; font-size: 1.5rem; color: var(--brand); }
+    h2 { margin: 36px 0 6px; font-size: 1.05rem; color: var(--brand); }
+    p { margin: 0 0 12px; color: var(--muted); }
+    code { font: 13px ui-monospace, Menlo, Consolas, monospace; background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+    .state-name { font: 12px ui-monospace, Menlo, Consolas, monospace; color: var(--dim); margin: 0 0 6px; }
+    pre.out { margin: 8px 0 0; padding: 10px 12px; background: var(--code-bg); border-radius: 8px;
+              font: 12.5px/1.5 ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+    pre.out.ok { border-left: 3px solid var(--ok); }
+    pre.out.bad { border-left: 3px solid var(--bad); }
+    footer { margin-top: 48px; font-size: 13px; color: var(--muted); }
+    a { color: #2f5fa7; }
+
+    /* ---- Palette preview: copies of Data Flow's own rules (styles.css,
+       .palette-node / .flow-node / .flow-node-icon), so the icon is judged
+       at the size it will really have. ---- */
+    .df-stage { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+    .df-col { display: flex; flex-direction: column; gap: 6px; width: 200px; }
+    .df-cat { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .3px; color: #5b6878; padding: 0 2px 2px; }
+    .palette-node {
+      position: relative; display: flex; align-items: center; gap: 8px; padding: 9px 10px;
+      background: var(--surface); border: 1px solid var(--border-strong);
+      border-left: 4px solid var(--node-color, var(--accent)); border-radius: 5px; font-size: 13px; color: var(--text);
+    }
+    .palette-node .ico { width: 16px; height: 16px; flex-shrink: 0; display: block; }
+    .palette-node img.ico { border-radius: 3px; }
+    .node-port { width: 9px; height: 9px; border-radius: 50%; background: var(--surface); border: 2px solid var(--dim); position: absolute; right: -5px; top: 50%; transform: translateY(-50%); }
+    .canvas-bg { padding: 24px; border-radius: 8px; display: flex; flex-direction: column; gap: 18px;
+                 background-color: #f6f7f9; background-image: radial-gradient(#d6dce3 1px, transparent 1px); background-size: 16px 16px; }
+    .flow-node {
+      position: relative; min-width: 150px; background: var(--surface); border: 1px solid var(--border-strong);
+      border-left: 5px solid var(--node-color, var(--accent)); border-radius: 6px; width: max-content;
+    }
+    .flow-node-body { display: flex; align-items: center; gap: 8px; padding: 11px 12px; }
+    .flow-node-icon { width: 28px; height: 28px; border-radius: 5px; display: flex; align-items: center; justify-content: center;
+                      background: var(--node-color, var(--accent)); color: #fff; flex-shrink: 0; overflow: hidden; }
+    .flow-node-icon img { width: 28px; height: 28px; display: block; }
+    .flow-node-label { font-size: 13px; font-weight: 600; }
+    .flow-node-sub { font-size: 11px; color: var(--dim); }
+    .flow-port { position: absolute; width: 12px; height: 12px; border-radius: 50%; background: var(--surface);
+                 border: 2px solid var(--dim); top: 50%; transform: translateY(-50%); right: -7px; box-sizing: border-box; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Data Flow SDK Example</h1>
+  <p>A sample app's connection to Data Flow, built with <code>/v1/dataflow-connect.js</code>.
+     Open it from a Puter app, signed in, to try the switch for real.</p>
+
+  <h2>The widget</h2>
+  <p>Live: it asks the signed-in user's Data Flow where this connection stands.</p>
+  <div id="live"></div>
+  <pre class="out" id="liveState"></pre>
+
+  <h2>Every state</h2>
+  <p>The same widget, shown in each state it can be in.</p>
+  <div class="grid" id="states"></div>
+
+  <h2>How the palette looks in Data Flow</h2>
+  <p>The app's icon is checked square, then drawn at 32 px and 56 px. Data Flow shows them
+     at 16 px in the palette menu and 28 px on the canvas, beside its own API palette for comparison.</p>
+  <div class="card df-stage" id="preview"></div>
+
+  <h2>Manifest checks</h2>
+  <p>A manifest is checked before anything else happens. Here, one with a 300×200 icon and two other mistakes:</p>
+  <pre class="out" id="manifestOut"></pre>
+
+  <h2>Record checks</h2>
+  <p>Records are checked against their stream before anything is sent. One call, all or nothing:</p>
+  <pre class="out" id="recordsOk"></pre>
+  <pre class="out" id="recordsBad"></pre>
+
+  <footer><a href="../">Data Flow SDK</a> · <a href="https://developer.puter.com" target="_blank" rel="noopener">Powered by Puter</a></footer>
+</main>
+
+<script src="https://js.puter.com/v2/"></script>
+<script type="module">
+  import { DataFlow } from '../v1/dataflow-connect.js';
+
+  // A sample app icon: a perfectly square SVG with its own width and height.
+  const icon = 'data:image/svg+xml,' + encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+       <rect width="256" height="256" rx="56" fill="#0f766e"/>
+       <path d="M72 168 L112 120 L144 148 L188 88" fill="none" stroke="#fff" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+       <circle cx="188" cy="88" r="16" fill="#fde68a"/>
+     </svg>`);
+
+  const manifest = {
+    app: 'sample-ledger',
+    palette: { label: 'Sample Ledger', description: 'Ledger entries from Sample Ledger.', icon },
+    streams: [{
+      id: 'ledger', label: 'Ledger', mode: 'snapshot', key: 'entryId',
+      fields: [
+        { name: 'entryId', type: 'string', required: true },
+        { name: 'date', type: 'date', precision: 'date', required: true },
+        { name: 'label', type: 'string' },
+        { name: 'owed', type: 'money', currency: 'EUR' },
+        { name: 'paid', type: 'money', currency: 'EUR' },
+        { name: 'reconciled', type: 'boolean' },
+      ],
+    }],
+  };
+
+  const show = (el, text, cls) => { el.textContent = text; el.className = 'out ' + (cls || ''); };
+
+  /* ---- live ---- */
+  const conn = await DataFlow.define(manifest);
+  conn.mount(document.getElementById('live'));
+  const liveState = document.getElementById('liveState');
+  const paint = () => show(liveState, `state: ${conn.state}${conn.message ? `\nmessage: ${conn.message}` : ''}`);
+  conn.on('change', paint); paint();
+
+  /* ---- every state, on stand-in connections ---- */
+  class Shown extends EventTarget {
+    constructor(state, message = '') { super(); this.state = state; this.message = message; this.manifest = conn.manifest; }
+    toggle() {}
+  }
+  const STATES = [
+    ['checking'], ['signin'], ['off'], ['pending'], ['on'], ['outdated'],
+    ['off', 'The connection was declined in Data Flow.'],
+    ['unavailable', 'This Data Flow cannot accept app connections yet.'],
+    ['error', 'Data Flow could not be reached. Check your connection and try again.'],
+  ];
+  const states = document.getElementById('states');
+  for (const [s, m] of STATES) {
+    const box = document.createElement('div');
+    box.innerHTML = `<div class="state-name">${s}${m ? ' (with message)' : ''}</div>`;
+    const el = document.createElement('dataflow-connect');
+    el.connection = new Shown(s, m);
+    box.appendChild(el);
+    states.appendChild(box);
+  }
+
+  /* ---- palette preview ---- */
+  const { menu, canvas } = conn.manifest.palette.icon;
+  const webhook = `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><path d="M18 16.98h-5.99c-1.1 0-1.95.94-2.48 1.9A4 4 0 0 1 2 17c.01-.7.2-1.4.57-2"/><path d="m6 17 3.13-5.78c.53-.97.1-2.18-.5-3.1a4 4 0 1 1 6.89-4.06"/><path d="m12 6 3.13 5.73C15.66 12.7 16.9 13 18 13a4 4 0 0 1 0 8"/></svg>`;
+  const label = conn.manifest.palette.label;
+  document.getElementById('preview').innerHTML = `
+    <div class="df-col">
+      <div class="df-cat">Palette menu · input</div>
+      <div class="palette-node" style="--node-color: var(--node-api)"><span class="node-port"></span>${webhook}<span>API</span></div>
+      <div class="palette-node" style="--node-color: var(--accent)"><span class="node-port"></span><img class="ico" src="${menu}" alt=""><span>${label}</span></div>
+    </div>
+    <div class="canvas-bg">
+      <div class="flow-node" style="--node-color: var(--node-api)"><span class="flow-port"></span>
+        <div class="flow-node-body"><span class="flow-node-icon">${webhook.replace('class="ico"', '')}</span>
+          <div><div class="flow-node-label">API</div><div class="flow-node-sub">input</div></div></div></div>
+      <div class="flow-node" style="--node-color: var(--accent)"><span class="flow-port"></span>
+        <div class="flow-node-body"><span class="flow-node-icon"><img src="${canvas}" alt=""></span>
+          <div><div class="flow-node-label">${label}</div><div class="flow-node-sub">input</div></div></div></div>
+    </div>`;
+
+  /* ---- manifest checks ---- */
+  const wide = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><rect width="300" height="200" fill="#999"/></svg>');
+  try {
+    await DataFlow.define({ ...manifest, palette: { ...manifest.palette, icon: wide },
+      streams: [{ ...manifest.streams[0], key: undefined, fields: [...manifest.streams[0].fields, { name: 'total', type: 'money', currency: 'XYZ' }] }] });
+    show(document.getElementById('manifestOut'), 'Accepted (unexpected).', 'bad');
+  } catch (e) {
+    show(document.getElementById('manifestOut'), `${e.name}\n${e.problems.map(p => '• ' + p).join('\n')}`, 'bad');
+  }
+
+  /* ---- record checks ---- */
+  const good = [
+    { entryId: 'EX-000-car_12', date: '2026-08-02', label: 'Acquisition cost', owed: 24900 },
+    { entryId: 'EX-000-car_12-R', date: '2026-08-20', label: 'Acquisition cost (R)', paid: 24900, reconciled: true },
+  ];
+  const wire = DataFlow.check(conn, 'ledger', good);
+  show(document.getElementById('recordsOk'), `Accepted — the first record as Data Flow receives it:\n${JSON.stringify(wire[0], null, 2)}`, 'ok');
+
+  const bad = [
+    { entryId: 'EX-001', date: '02/08/2026', owed: '24900' },
+    { entryId: 'EX-002', date: '2026-02-31', paid: 10.005, reconciled: 'true' },
+    { date: '2026-08-02', colour: 'red', label: null },
+    { entryId: 'EX-001', date: new Date() },
+  ];
+  try { DataFlow.check(conn, 'ledger', bad); }
+  catch (e) { show(document.getElementById('recordsBad'), `${e.name} — nothing would be sent:\n${e.problems.map(p => '• ' + p).join('\n')}`, 'bad'); }
+</script>
+</body>
+</html>
