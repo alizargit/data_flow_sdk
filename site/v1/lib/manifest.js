@@ -92,9 +92,18 @@ export async function defineManifest(input) {
 
   if (problems.length) throw new ManifestError(problems);
 
-  const out = { app, palette: { label, description, icon: { menu: icon.menu, canvas: icon.canvas } }, streams };
-  out.hash = await hashOf(out);
+  const out = { app, palette: { label, description, icon: { menu: icon.menu, canvas: icon.canvas, source: icon.source } }, streams };
+  out.hash = await hashOf(hashed(out));
   return deepFreeze(out);
+}
+
+/**
+ * What the hash covers: everything, except that the icon is represented by its
+ * SOURCE fingerprint rather than by the drawn copies, which differ by browser
+ * (icon.js). Data Flow's worker hashes exactly this shape.
+ */
+function hashed(m) {
+  return { ...m, palette: { ...m.palette, icon: { source: m.palette.icon.source } } };
 }
 
 function stream(s, at, problems) {

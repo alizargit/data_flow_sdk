@@ -36,16 +36,23 @@ import { defineManifest, ManifestError, LIMITS, MODES } from './lib/manifest.js'
 import { RecordError, toPayloads } from './lib/records.js';
 import { ConnectError, configure, environment } from './lib/transport.js';
 import { Connection } from './lib/connection.js';
-import { DataFlowConnectElement } from './lib/widget.js';
+import { DataFlowConnectElement, TEXT } from './lib/widget.js';
 import { FIELD_TYPES, CURRENCIES, DATE_PRECISIONS } from './lib/formats.js';
 import { IconError, ICON_MIN, ICON_SIZES } from './lib/icon.js';
 
-export const VERSION = '1.0.0';
+export const VERSION = '1.1.0';
 
 if (!customElements.get('dataflow-connect')) customElements.define('dataflow-connect', DataFlowConnectElement);
 
-Connection.prototype.mount = function (container) {
+/**
+ * Put the widget in `container`. Options:
+ *   lang  'en' or 'pt' (default: the page's <html lang>, else English)
+ *   text  replacement strings, keyed as in DataFlow.TEXT.en
+ */
+Connection.prototype.mount = function (container, { lang, text } = {}) {
   const el = document.createElement('dataflow-connect');
+  if (lang) el.setAttribute('lang', lang);
+  if (text) el.text = text;
   el.connection = this;
   container.appendChild(el);
   return el;
@@ -74,7 +81,7 @@ function check(connection, streamId, records) {
 }
 
 export const DataFlow = Object.freeze({
-  VERSION, define, check, configure, environment,
+  VERSION, define, check, configure, environment, TEXT,
   FIELD_TYPES, CURRENCIES, DATE_PRECISIONS, MODES, LIMITS, ICON_MIN, ICON_SIZES,
   ManifestError, RecordError, ConnectError, IconError,
 });

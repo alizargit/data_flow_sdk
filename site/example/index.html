@@ -129,21 +129,27 @@
 
   /* ---- every state, on stand-in connections ---- */
   class Shown extends EventTarget {
-    constructor(state, message = '') { super(); this.state = state; this.message = message; this.manifest = conn.manifest; }
+    constructor(state, code = '', extra = {}) {
+      super(); Object.assign(this, { state, code, message: '', consentUrl: '', manifest: conn.manifest }, extra);
+    }
     toggle() {}
   }
   const STATES = [
     ['checking'], ['signin'], ['off'], ['pending'], ['on'], ['outdated'],
-    ['off', 'The connection was declined in Data Flow.'],
-    ['unavailable', 'This Data Flow cannot accept app connections yet.'],
-    ['error', 'Data Flow could not be reached. Check your connection and try again.'],
+    ['off', 'declined'],
+    ['pending', 'open_link', { consentUrl: 'https://dataflow.puter.site/#/connect/' + '0'.repeat(32) }],
+    ['unavailable', 'unsupported'],
+    ['error', 'network'],
+    ['on', '', { lang: 'pt' }],
+    ['off', '', { lang: 'pt' }],
   ];
   const states = document.getElementById('states');
-  for (const [s, m] of STATES) {
+  for (const [s, code, extra = {}] of STATES) {
     const box = document.createElement('div');
-    box.innerHTML = `<div class="state-name">${s}${m ? ' (with message)' : ''}</div>`;
+    box.innerHTML = `<div class="state-name">${s}${code ? ` · ${code}` : ''}${extra.lang ? ` · lang="${extra.lang}"` : ''}</div>`;
     const el = document.createElement('dataflow-connect');
-    el.connection = new Shown(s, m);
+    if (extra.lang) el.setAttribute('lang', extra.lang);
+    el.connection = new Shown(s, code, extra);
     box.appendChild(el);
     states.appendChild(box);
   }

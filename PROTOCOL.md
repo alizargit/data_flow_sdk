@@ -36,7 +36,7 @@ below. That normalised form is what travels.
   "palette": {
     "label": "Carisma",
     "description": "Your investor ledger.",
-    "icon": { "menu": "data:image/png;base64,…", "canvas": "data:image/png;base64,…" }
+    "icon": { "menu": "data:image/png;base64,…", "canvas": "data:image/png;base64,…", "source": "<sha-256 hex of the icon file>" }
   },
   "streams": [{
     "id": "ledger", "label": "Ledger", "mode": "snapshot", "key": "entryId",
@@ -46,7 +46,7 @@ below. That normalised form is what travels.
       { "name": "owed", "type": "money", "currency": "EUR", "required": false }
     ]
   }],
-  "hash": "<sha-256 hex of the canonical JSON of everything above>"
+  "hash": "<sha-256 hex of the canonical JSON of everything above, icon as { source } only>"
 }
 ```
 
@@ -57,6 +57,7 @@ below. That normalised form is what travels.
 | `palette.description` | 0–280 characters. The palette's info text. |
 | `palette.icon.menu` | 32×32 PNG. Shown at 16 px where a built-in palette shows its Lucide glyph. |
 | `palette.icon.canvas` | 56×56 PNG. Shown at 28 px, filling the node's icon tile (`.flow-node-icon`). |
+| `palette.icon.source` | 64 hex characters: the SHA-256 of the icon file's own bytes. |
 | `streams` | 1–4. **One output port each**, in order, labelled `label`. |
 | `stream.id` | `^[a-z][a-z0-9_]{0,31}$`, unique. |
 | `stream.mode` | `append`: records add. `snapshot`: each `replace()` is the stream's complete current set. |
@@ -65,6 +66,8 @@ below. That normalised form is what travels.
 | `field.type` | `string`, `boolean`, `number`, `date`, `money`, `json`, `file`, `files`. |
 | `field.currency` | Money only, and required for it. One of AED AUD CAD CHF CNY EUR GBP JPY USD. |
 | `field.precision` | Date only, optional: `date`, `time` or `datetime`. |
+| `field.label` | Optional, up to 64 characters. The column's heading in Data Flow; records still use `name`. |
+| `field.required` | `true` or `false`. A record without a required field is refused. |
 
 **The icon.** The SDK refuses any icon that is not a perfect square, is smaller
 than 64 px, is larger than 4096 px, or can't be read by the page (CORS). Accepted
@@ -72,9 +75,13 @@ formats are PNG, JPEG, WebP, GIF and SVG (an SVG must declare its width and
 height). The two sizes above are drawn from the source, so Data Flow never sees
 the original.
 
-**The hash.** The user approves *a hash*. Any change to the manifest, its icon
-included, gives a new hash. A connection approved under another hash is
-`outdated`: Data Flow must refuse its sends, and the user must approve again.
+**The hash.** The user approves *a hash*. It is the SHA-256 of the manifest's
+canonical JSON (keys sorted at every level), computed with `palette.icon`
+replaced by `{ source }`. The `menu` and `canvas` copies are left out because
+browsers draw them differently, which would make one approval fail in another
+browser. Any other change to the manifest, including a new icon file, gives a new
+hash. A connection approved under another hash is `outdated`: Data Flow must
+refuse its sends, and the user must approve again.
 
 ## 2. Records on the wire
 
@@ -134,9 +141,13 @@ for the session's user.
   rather than trusting the one sent.
 - It records the request's **`Origin` header**, so the consent page can show the
   user where the request came from.
-- It refuses an origin that isn't a Puter app: `https://*.puter.site`, Puter's own
-  app origins, and `http://localhost:*` only for the worker's owner while
-  developing.
+- It accepts `https://*.puter.site` and Puter's own app origins
+  (`puter.com`, `puter.app`), and refuses any other website.
+- It accepts `http://localhost:*` and `http://127.0.0.1:*` from any developer,
+  marked `dev`. The consent page must then tell the user the request comes from a
+  development copy on their own computer.
+- A request with no `Origin` header is accepted, and shown as coming from an
+  unknown address.
 - A request expires after 10 minutes.
 - One pending request is kept per user per app; a new one replaces it.
 
@@ -174,6 +185,10 @@ The SDK opens `https://dataflow.puter.site/#/connect/<requestId>` in a popup,
 inside the click that switched the widget on. It opens before the request is
 parked, so the page must wait (a few seconds) for the request to appear.
 
+When no window can be opened (a pop-up blocker, or an app framed inside the Puter
+desktop), the SDK parks the request anyway, and the widget shows the same address
+as a link for the user to open.
+
 The page must:
 1. Make sure the user is signed in to Data Flow, as themselves.
 2. Load the parked request **for the signed-in user only**. A request id is never
@@ -181,9 +196,11 @@ The page must:
 3. Show the app name, the origin the request came from, the palette exactly as
    it will look (label, both icon sizes, output ports), and every field with its
    type.
-4. On **Approve**: create the palette (or update an existing one for this app,
-   keeping its wires), and record `{ hash, manifest, nodeId }` as the
-   connection. On **Decline**: mark the request `denied`.
+4. On **Approve**: record `{ hash, manifest }` as the connection. Data Flow then
+   lists the app in its palette, and the user places it on their canvas; a node
+   already placed for the app takes the new manifest, and its wires follow their
+   streams. On **Decline**: mark the request `denied`. Declining an update keeps
+   the earlier approval, but sends stay `outdated` until the update is approved.
 5. Close itself, or say it can be closed. The SDK learns the outcome by polling
    `/connect/status` every 2 seconds.
 
@@ -192,6 +209,7 @@ The page must:
 - **Server-side senders.** Every send is made by the user's own session. An app
   whose data is changed by someone else (for example Carisma, where the owner
   edits an investor's ledger) can only update the investor's Data Flow while the
-  investor has the app open. A key-based route for a developer's own worker is a
-  candidate for v1.x. It would only add to the protocol.
+  investor has the app open. A key-based route for a developer's own worker is
+  being considered for v1.x. It isn't scheduled, and it would only add to the
+  protocol.
 - **Two-way data.** Data Flow never writes back into the app.

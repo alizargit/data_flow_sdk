@@ -8,9 +8,9 @@ The app shows one switch. When the user turns it on, Data Flow asks them to
 approve the connection. After that, the app's data arrives in their flow as an
 input palette carrying the app's name and icon.
 
-**Status:** the SDK (v1) is built, and so is Data Flow's side (its consent page
-and worker routes). Data Flow's side isn't deployed yet, and until it is the
-widget says so. See [PROTOCOL.md](PROTOCOL.md).
+**Status:** v1 is live, at `https://dataflow-sdk.puter.site/v1/`, and so is
+Data Flow's side. See [CHANGELOG.md](CHANGELOG.md) for the current release and
+[PROTOCOL.md](PROTOCOL.md) for the contract.
 
 ## Use
 
@@ -57,6 +57,26 @@ widget says so. See [PROTOCOL.md](PROTOCOL.md).
 - **`DataFlow.check(conn, stream, records)`** runs the same checks without
   sending.
 
+### Manifest reference
+
+| Key | Required | Rule | What Data Flow does with it |
+|---|---|---|---|
+| `app` | yes | Your registered Puter app name: letters, digits, `-`, `_`. | Names the connection. Shown on the consent page. |
+| `palette.label` | yes | 1–24 characters. | The palette's name in the menu, and the node's default name. |
+| `palette.description` | no | Up to 280 characters. | Shown on the consent page and in the node's panel. |
+| `palette.icon` | yes | See [The icon](#the-icon). | The palette's icon in the menu and on the canvas. |
+| `streams` | yes | 1–4. | One output port each, in this order. |
+| `stream.id` | yes | Lower-case letters, digits and `_`, starting with a letter, up to 32 characters. Unique. | How you name the stream in `send()` and `replace()`. Wires follow it if you reorder streams. |
+| `stream.label` | no | Up to 24 characters. Defaults to `id`. | The output port's label. |
+| `stream.mode` | no | `append` (default) or `snapshot`. | See [Keeping Data Flow up to date](#keeping-data-flow-up-to-date). |
+| `stream.key` | for `snapshot` | The name of a `string` or `number` field. That field becomes required. | The record's identity: a Table updates the row with the same key instead of adding a new one. |
+| `field.name` | yes | 1–64 characters, no leading or trailing spaces. Unique in its stream. | The column's key, and the name records use. |
+| `field.label` | no | Up to 64 characters. | The column's heading in Data Flow, and the field's name on the consent page. Records still use `name`. |
+| `field.type` | yes | `string`, `boolean`, `number`, `date`, `money`, `json`, `file`, `files`. | The column's type. See the table below. |
+| `field.required` | no | `true` or `false` (default). | A record without it is refused. |
+| `field.currency` | for `money` | AED, AUD, CAD, CHF, CNY, EUR, GBP, JPY or USD. | Every amount for the field is in this currency. |
+| `field.precision` | no, `date` only | `date`, `time` or `datetime`. | Only that one date form is accepted. |
+
 ### What Data Flow accepts
 
 | Type | Value | Note |
@@ -82,9 +102,57 @@ JPEG, WebP, GIF, or SVG with its own width and height. Pass any of:
 - a `Blob` or `File`.
 
 A URL on another origin must be served with CORS headers, or the browser won't
-let the SDK read the pixels. The SDK shrinks the icon to the two sizes Data Flow
-shows (16 px in the palette menu, 28 px on the canvas) and sends only those small
+let the SDK read it. The SDK shrinks the icon to the two sizes Data Flow shows
+(16 px in the palette menu, 28 px on the canvas) and sends only those small
 copies, never your original file.
+
+**The approval covers your icon file, not the copies.** Browsers draw the small
+copies slightly differently, so they aren't the same from one browser to the
+next. The manifest's fingerprint therefore uses the SHA-256 of your icon file's
+own bytes:
+
+- the same icon file gives the same approval in every browser;
+- a new icon file means the user approves again.
+
+If you build the icon in the page (a `Blob` drawn at runtime), keep its bytes
+stable, or users will be asked again.
+
+## The widget
+
+`conn.mount(container, options)` adds it to `container`. You can also place
+`<dataflow-connect>` in your page yourself and set its `connection` property.
+
+- **Language.** English and Portuguese are built in. The widget uses
+  `options.lang` (or a `lang` attribute on the element) if you give one,
+  otherwise your page's `<html lang>`, otherwise English:
+  ```js
+  conn.mount(el, { lang: 'pt' });   // 'pt', 'pt-PT' and 'pt-BR' all choose Portuguese
+  ```
+- **Your own words.** `options.text` (or the element's `text` property) replaces
+  any string. Keys are listed in `DataFlow.TEXT.en`. A value is text, or a
+  function of your palette label:
+  ```js
+  conn.mount(el, { lang: 'pt', text: { off: label => `Enviar o razão de ${label} para o Data Flow.` } });
+  ```
+  "Data Flow" itself is a name and isn't translated.
+- **Look.** It is a fixed panel in Data Flow's colours, so users recognise it as
+  Data Flow's. Only its width is yours to set, up to 440 px.
+
+### Inside the Puter desktop
+
+When an app runs inside the Puter desktop, it runs in an iframe. Switching on
+first tries to open Data Flow's consent page in a new window. If the browser or
+the frame doesn't allow that, the request is still made, and the widget shows an
+**Open Data Flow** link instead. A click on a link is allowed where a scripted
+window isn't. Either way the widget turns on by itself once the user approves.
+
+### Developing on localhost
+
+The SDK runs on `http://localhost` and `http://127.0.0.1` as well as on Puter
+(`*.puter.site`, or inside the Puter desktop). Data Flow accepts connections from
+localhost from any developer. The consent page tells the user the request comes
+from a development copy on their own computer, and they approve it as usual.
+Sign in to Puter on your local page with the account you'll test with.
 
 ## Keeping Data Flow up to date
 
@@ -107,6 +175,21 @@ has Data Flow open, and they wait for it while it's closed.
   placed or a payment made. Each record is added. Give the stream a `key`: then
   a record sent twice updates the row it already made, instead of adding a second
   one.
+
+**What a snapshot does in Data Flow.** Data Flow compares each snapshot with the
+previous one by `key`:
+
+- **New keys** add a row.
+- **Changed records** update the row with that key in place.
+- **Keys you stopped sending** remove that row.
+- **Unchanged records** aren't touched at all, so a column the user added or a
+  cell they edited in a Table stays, until that record changes.
+- **Locked cells and rows** in the user's Tables are kept, even when your
+  snapshot would change or remove them. The user is told.
+
+Data Flow keeps no history of earlier versions of a row: the Table always shows
+the latest. Wires belong to the palette, not to the data, so no snapshot changes
+them.
 
 **When to send:**
 
@@ -146,8 +229,13 @@ has Data Flow open, and they wait for it while it's closed.
 session, so your app can only send while that user has it open. If other people
 change a user's data, as in an app where an administrator edits records for many
 users, those changes reach the user's Data Flow the next time *they* open your
-app and step 3 runs. Sending from your own server while the user is away isn't
-part of v1 (see [PROTOCOL.md](PROTOCOL.md) §5).
+app and step 3 runs.
+
+Sending from your own server while the user is away isn't part of v1. A
+key-based sender for an app's own worker is being considered: the user would
+approve it on the consent page, and your worker would send with a key scoped to
+that one user and your manifest. It isn't scheduled yet. If you need it, open an
+issue on the GitHub repository so it can be prioritised.
 
 ## Consent and accounts
 
@@ -198,9 +286,14 @@ and rules that accept more than before. Nothing your app relies on is removed or
 tightened. A breaking change goes into a new `/v2/` folder beside `/v1/`, which
 keeps working.
 
+**When a release goes live.** `https://dataflow-sdk.puter.site/v1/` is deployed
+from this repository at the same time a release is tagged. The hosted `/v1/`
+files are always the latest `v1.x` tag. Untagged commits on `master` aren't
+deployed.
+
 **How you hear about a release:**
 
 - Every release is listed in [CHANGELOG.md](CHANGELOG.md) and tagged on GitHub as
-  `v<version>` (for example `v1.0.0`).
+  `v<version>` (for example `v1.1.0`).
 - **Watch → Custom → Releases** on the GitHub repository notifies you of each one.
 - At runtime, `DataFlow.VERSION` names the release your page loaded.

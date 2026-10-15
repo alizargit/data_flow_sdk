@@ -12,11 +12,19 @@
 //                without connections); the switch is disabled
 //   error        the last attempt failed; connection.message says why
 //
+// Beside the state, `connection.code` names WHY when there is more to say
+// (`declined`, `timeout`, `closed`, `open_link`, `unsupported`, `not_puter`,
+// a worker code…), and `connection.message` says it in English. The widget
+// translates by code and falls back to the message (widget.js).
+//
+// `connection.consentUrl` is set while pending when the consent window could
+// not be opened (code `open_link`): the widget shows it as a link instead.
+//
 // Listen with connection.addEventListener('change', …) or connection.on('change', …).
 
 import { toPayloads } from './records.js';
 import {
-  api, environment, isSignedIn, openConsent, newRequestId, chunk, ConnectError,
+  api, environment, isSignedIn, openConsent, consentUrl, newRequestId, chunk, ConnectError,
 } from './transport.js';
 
 const POLL_MS = 2000;
@@ -31,6 +39,8 @@ export class Connection extends EventTarget {
     this.#manifest = manifest;
     this.state = 'checking';
     this.message = '';
+    this.code = '';
+    this.consentUrl = '';
   }
 
   /** The normalised manifest this connection was defined with (frozen). */
@@ -38,17 +48,19 @@ export class Connection extends EventTarget {
 
   on(type, fn) { this.addEventListener(type, e => fn(e.detail)); return this; }
 
-  #set(state, message = '') {
-    if (state === this.state && message === this.message) return;
+  #set(state, message = '', code = '') {
+    if (state !== 'pending') this.consentUrl = '';
+    if (state === this.state && message === this.message && code === this.code) return;
     this.state = state;
     this.message = message;
-    this.dispatchEvent(new CustomEvent('change', { detail: { state, message } }));
+    this.code = code;
+    this.dispatchEvent(new CustomEvent('change', { detail: { state, message, code } }));
   }
 
   /** Ask Data Flow where this connection stands. Safe to call any time. */
   async refresh() {
     const env = environment();
-    if (!env.ok) return this.#set('unavailable', env.reason);
+    if (!env.ok) return this.#set('unavailable', env.reason, env.code);
     if (!isSignedIn()) return this.#set('signin');
     if (this.state !== 'pending') this.#set('checking');
     try {
@@ -64,18 +76,19 @@ export class Connection extends EventTarget {
       this.#stopPoll();
       this.#set(s.hash === this.#manifest.hash ? 'on' : 'outdated');
     } else if (s.state === 'pending') {
-      this.#set('pending');
+      if (this.state !== 'pending') this.#set('pending');
     } else {
       this.#stopPoll();
-      this.#set('off', s.state === 'denied' ? 'The connection was declined in Data Flow.' : '');
+      if (s.state === 'denied') this.#set('off', 'The connection was declined in Data Flow.', 'declined');
+      else this.#set('off');
     }
   }
 
   #fail(e) {
     this.#stopPoll();
-    if (e instanceof ConnectError && e.code === 'unsupported') return this.#set('unavailable', e.message);
+    if (e instanceof ConnectError && e.code === 'unsupported') return this.#set('unavailable', e.message, 'unsupported');
     if (e instanceof ConnectError && e.code === 'signin') return this.#set('signin');
-    this.#set('error', e.message || 'Something went wrong.');
+    this.#set('error', e.message || 'Something went wrong.', (e && e.code) || '');
   }
 
   /**
@@ -100,12 +113,19 @@ export class Connection extends EventTarget {
     }
     const requestId = newRequestId();
     const win = openConsent(requestId);   // before any await — see openConsent
-    if (!win) return this.#set('error', 'Your browser blocked Data Flow\'s window. Allow pop-ups for this site and try again.');
-    this.#set('pending');
+    // No window — a pop-up blocker, or an iframe in the Puter desktop that may
+    // not open one. The request is parked all the same, and the widget offers
+    // the consent page as a link: a click on a link is allowed where a
+    // scripted window is not.
+    if (win) this.#set('pending');
+    else {
+      this.consentUrl = consentUrl(requestId);
+      this.#set('pending', 'Open Data Flow to approve the connection.', 'open_link');
+    }
     try {
       await api.request(this.#manifest.app, requestId, this.#manifest);
     } catch (e) {
-      try { win.close(); } catch { /* already closed */ }
+      try { if (win) win.close(); } catch { /* already closed */ }
       return this.#fail(e);
     }
     this.#startPoll(win);
@@ -136,13 +156,15 @@ export class Connection extends EventTarget {
     this.#poll = setInterval(async () => {
       if (Date.now() - started > POLL_LIMIT_MS) {
         this.#stopPoll();
-        return this.#set('off', 'The connection was not approved in time. Switch on to try again.');
+        return this.#set('off', 'The connection was not approved in time. Switch on to try again.', 'timeout');
       }
       try {
         const s = await api.status(this.#manifest.app);
-        if (s.state === 'pending' && win.closed && ++closedChecks > 2) {
+        // Only a window this page opened can be seen closing; a link opened
+        // elsewhere simply waits for the answer or the time limit.
+        if (s.state === 'pending' && win && win.closed && ++closedChecks > 2) {
           this.#stopPoll();
-          return this.#set('off', 'Data Flow was closed before the connection was approved.');
+          return this.#set('off', 'Data Flow was closed before the connection was approved.', 'closed');
         }
         this.#apply(s);
       } catch (e) {

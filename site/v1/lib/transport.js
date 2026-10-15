@@ -50,12 +50,12 @@ export class ConnectError extends Error {
 export function environment() {
   const p = globalThis.puter;
   if (!p || !p.workers || typeof p.workers.exec !== 'function') {
-    return { ok: false, reason: 'Load puter.js (https://js.puter.com/v2/) before the Data Flow SDK.' };
+    return { ok: false, code: 'no_puterjs', reason: 'Load puter.js (https://js.puter.com/v2/) before the Data Flow SDK.' };
   }
   const host = location.hostname;
   const dev = host === 'localhost' || host === '127.0.0.1';
   if (p.env === 'app' || host.endsWith('.puter.site') || dev) return { ok: true, dev };
-  return { ok: false, reason: 'Data Flow connections work only in apps that run on Puter.' };
+  return { ok: false, code: 'not_puter', reason: 'Data Flow connections work only in apps that run on Puter.' };
 }
 
 export const isSignedIn = () => {
@@ -111,9 +111,17 @@ export function newRequestId() {
  * it to appear.
  */
 export function openConsent(requestId) {
-  const url = `${settings.appUrl}/#/connect/${requestId}`;
-  return window.open(url, 'dataflow-connect', 'popup,width=520,height=760');
+  try { return window.open(consentUrl(requestId), 'dataflow-connect', 'popup,width=520,height=760'); }
+  catch { return null; }
 }
+
+/**
+ * The consent page's address. Shown as a link by the widget when the window
+ * could not be opened — inside the Puter desktop an app runs in an iframe, and
+ * a browser or the frame may refuse a scripted window where a click on a link
+ * still works.
+ */
+export const consentUrl = requestId => `${settings.appUrl}/#/connect/${requestId}`;
 
 /* ---------- Sending ----------
    One call's records are cut into requests no bigger than these. The worker

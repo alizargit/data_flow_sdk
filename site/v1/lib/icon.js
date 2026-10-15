@@ -21,7 +21,15 @@
 //     (a browser reports 0x0 for one that does not, and there is then nothing to
 //     test squareness against).
 //   - Readable by this page. A cross-origin URL must be served with CORS, or the
-//     browser will not let the page read the pixels back.
+//     browser will not let the page read it.
+//
+// THE FINGERPRINT IS THE SOURCE, NOT THE COPIES. The user approves a manifest by
+// its hash (manifest.js), and the icon is part of what they approved. But two
+// browsers resample and encode a PNG differently, so the drawn copies are not
+// byte-identical from one browser to the next — hashing them would ask the same
+// user to approve again on every other browser. So the icon's part of the hash
+// is `source`: the SHA-256 of the image file's own bytes, which are the same
+// everywhere. The copies only travel for display.
 
 export const ICON_SIZES = Object.freeze({ menu: 32, canvas: 56 });
 export const ICON_MIN = 64;
@@ -36,11 +44,19 @@ export class IconError extends Error {
 /**
  * Load, check and shrink an icon.
  * `source` is a URL (http(s), relative, or data:), or a Blob/File.
- * Resolves to { menu, canvas, size } — two PNG data: URIs and the source's side —
- * or rejects with an IconError saying exactly what is wrong.
+ * Resolves to { menu, canvas, source, size } — two PNG data: URIs, the SHA-256
+ * of the source file's bytes, and its side — or rejects with an IconError
+ * saying exactly what is wrong.
  */
 export async function prepareIcon(source) {
-  const { url, revoke, mime } = await toUrl(source);
+  const blob = await toBlob(source);
+  const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
+  const hash = [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
+  // Drawn from the very bytes that were hashed, through a same-origin blob: URL,
+  // so the canvas is never tainted and what is shown is what was fingerprinted.
+  const url = URL.createObjectURL(blob);
+  const mime = (blob.type || '').toLowerCase();
+  const revoke = () => URL.revokeObjectURL(url);
   try {
     if (mime && !ACCEPTED_MIME.includes(mime)) {
       throw new IconError(`icon must be PNG, JPEG, WebP, GIF or SVG — got ${mime}.`);
@@ -61,34 +77,35 @@ export async function prepareIcon(source) {
         throw new IconError(`icon is too detailed to store: its ${slot} size came out at ${Math.round(uri.length / 1024)} KB.`);
       }
     }
-    return { menu, canvas, size: w };
+    return { menu, canvas, source: hash, size: w };
   } finally {
     revoke();
   }
 }
 
-async function toUrl(source) {
-  if (typeof Blob !== 'undefined' && source instanceof Blob) {
-    const url = URL.createObjectURL(source);
-    return { url, mime: source.type || '', revoke: () => URL.revokeObjectURL(url) };
-  }
+/** The icon's file as a Blob: a Blob as given, or a URL / data: URI fetched. */
+async function toBlob(source) {
+  if (typeof Blob !== 'undefined' && source instanceof Blob) return source;
   if (typeof source !== 'string' || !source.trim()) {
     throw new IconError('icon must be an image URL, a data: URI, or a Blob/File.');
   }
-  const mime = (/^data:([^;,]+)/i.exec(source) || [])[1] || '';
-  return { url: source, mime: mime.toLowerCase(), revoke: () => {} };
+  let res;
+  try { res = await fetch(source, { mode: 'cors', credentials: 'omit' }); }
+  catch { throw new IconError('icon could not be loaded. Check the URL; an icon on another origin must be served with CORS headers.'); }
+  if (!res.ok) throw new IconError(`icon could not be loaded (${res.status}). Check the URL.`);
+  const blob = await res.blob();
+  // A server that labels an SVG as text/plain still serves an SVG; trust a
+  // data: URI's own type, otherwise the response's.
+  const declared = (/^data:([^;,]+)/i.exec(source) || [])[1];
+  return declared && declared.toLowerCase() !== blob.type ? new Blob([blob], { type: declared.toLowerCase() }) : blob;
 }
 
 function load(url) {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    // Without this the image still shows, but drawing it would taint the canvas
-    // and the page could not read its own resized copy back.
-    if (!/^(data|blob):/i.test(url)) img.crossOrigin = 'anonymous';
     img.decoding = 'async';
     img.onload = () => resolve(img);
-    img.onerror = () => reject(new IconError(
-      'icon could not be loaded. Check the URL; an icon on another origin must be served with CORS headers.'));
+    img.onerror = () => reject(new IconError('icon could not be read as an image.'));
     img.src = url;
   });
 }
@@ -106,11 +123,7 @@ function draw(img, side, size) {
     cur = next;
   }
   const out = cur === size && src !== img ? src : paint(src, cur, size);
-  try {
-    return out.toDataURL('image/png');
-  } catch {
-    throw new IconError('icon is on another origin without CORS headers, so it cannot be resized. Serve it from your app, or with CORS.');
-  }
+  return out.toDataURL('image/png');
 }
 
 function paint(src, from, to) {
