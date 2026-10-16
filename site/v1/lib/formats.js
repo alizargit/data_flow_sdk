@@ -7,7 +7,9 @@
 // The reference is Data Flow's own `site/js/core/apiformat.js`, which its worker
 // (`workers/dataflow-api.js`) mirrors. This is a third copy of the same rules.
 // CHANGE ALL THREE TOGETHER — and since this file is public and versioned, a rule
-// may only get LOOSER within v1. Tightening one breaks apps already sending.
+// should only get LOOSER within v1: tightening one breaks apps already sending.
+// 1.2.0 broke this once, on purpose and before any app had shipped against it:
+// Key IDs became their own type, declared with their relationships (manifest.js).
 //
 // One place this file is deliberately stricter than Data Flow: a money amount
 // with more decimals than its currency has is REFUSED here, where Data Flow would
@@ -15,10 +17,10 @@
 // is that what an app sends is what arrives.
 
 /** The wire types Data Flow's inbound contract accepts. */
-export const WIRE_TYPES = ['string', 'boolean', 'number', 'date', 'money', 'json'];
+export const WIRE_TYPES = ['string', 'boolean', 'number', 'date', 'money', 'json', 'key_id'];
 
 /**
- * The field types a manifest may declare. The six wire types, plus two that
+ * The field types a manifest may declare. The seven wire types, plus two that
  * travel as wire types but mean something more to Data Flow:
  *   file   — one file, sent as a base64 data: URI in a string field
  *   files  — up to MAX_FILES_PER_FIELD of them, as a json array of data: URIs
@@ -103,4 +105,23 @@ export const carriesFile = v => CARRIES_FILE.test(typeof v === 'string' ? v : JS
 /** Byte length of a string as UTF-8. */
 export function byteLen(s) {
   try { return new TextEncoder().encode(s).length; } catch { return String(s).length; }
+}
+
+/* ---------- Key IDs ----------
+   A record's identity, and the identities it points at: a string or a number,
+   at most MAX_KEY_ID_CHARS as text. Mirrors MAX_KEY_ID_CHARS in the worker. A
+   string must already be trimmed — the worker would trim it, and the value that
+   arrives must be the value sent. */
+export const MAX_KEY_ID_CHARS = 200;
+
+/** Problems with one Key ID value, as a message, or '' when it is acceptable. */
+export function keyIdProblem(v) {
+  if (typeof v === 'number') {
+    return isFinite(v) ? '' : `must be a finite number or a string, not ${v}`;
+  }
+  if (typeof v !== 'string') return 'must be a string or a number';
+  if (!v) return 'is empty';
+  if (v !== v.trim()) return 'has leading or trailing spaces';
+  if (v.length > MAX_KEY_ID_CHARS) return `is over ${MAX_KEY_ID_CHARS} characters`;
+  return '';
 }

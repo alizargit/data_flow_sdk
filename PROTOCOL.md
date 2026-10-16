@@ -37,10 +37,15 @@ below. That normalised form is what travels.
     "description": "Your investor ledger.",
     "icon": { "menu": "data:image/png;base64,…", "canvas": "data:image/png;base64,…", "source": "<sha-256 hex of the icon file>" }
   },
+  "keys": [
+    { "name": "carId", "label": "Car" },
+    { "name": "entryId", "label": "Entry", "parent": "carId" }
+  ],
   "streams": [{
     "id": "ledger", "label": "Ledger", "mode": "snapshot", "key": "entryId",
     "fields": [
-      { "name": "entryId", "type": "string", "required": true },
+      { "name": "entryId", "type": "key_id", "required": true },
+      { "name": "carId", "type": "key_id", "required": true },
       { "name": "date", "type": "date", "precision": "date", "required": true },
       { "name": "owed", "type": "money", "currency": "EUR", "required": false }
     ]
@@ -57,12 +62,17 @@ below. That normalised form is what travels.
 | `palette.icon.menu` | 32×32 PNG. Shown at 16 px where a built-in palette shows its Lucide glyph. |
 | `palette.icon.canvas` | 56×56 PNG. Shown at 28 px, filling the node's icon tile (`.flow-node-icon`). |
 | `palette.icon.source` | 64 hex characters: the SHA-256 of the icon file's own bytes. |
+| `keys` | 1–16. **Every** Key ID the app's records carry, once for the whole app. Each is used by at least one stream. |
+| `key.name` | Unique; the same rule as a field name. A `key_id` field of that name carries it. |
+| `key.label` | Optional, up to 64 characters. Shown on the consent page. |
+| `key.parent` | Optional: another declared key this one lives inside. No cycles; at most 4 levels. A child's values are unique on their own, not just within the parent. |
+| `key.references` | Optional: other declared keys this one points at without living inside them. Not one of its own ancestors or descendants. |
 | `streams` | 1–4. **One output port each**, in order, labelled `label`. |
 | `stream.id` | `^[a-z][a-z0-9_]{0,31}$`, unique. |
 | `stream.mode` | `append`: records add. `snapshot`: each `replace()` is the stream's complete current set. |
-| `stream.key` | A `string` or `number` field, always required. This is the Key ID the receiver matches on. Required for `snapshot`. |
+| `stream.key` | **Required on every stream**: a `key_id` field, always required. The record's identity, the Key ID the receiver matches on. |
 | `fields` | 1–64 per stream. Each name is unique and at most 64 characters, with no leading or trailing spaces. |
-| `field.type` | `string`, `boolean`, `number`, `date`, `money`, `json`, `file`, `files`. |
+| `field.type` | `string`, `boolean`, `number`, `date`, `money`, `json`, `key_id`, `file`, `files`. A `key_id` field must be a declared key, and must be the stream's `key`, one of its ancestors (then always required), or one it references. So each record has exactly one identity. |
 | `field.currency` | Money only, and required for it. One of AED AUD CAD CHF CNY EUR GBP JPY USD. |
 | `field.precision` | Date only, optional: `date`, `time` or `datetime`. |
 | `field.label` | Optional, up to 64 characters. The column's heading in Data Flow; records still use `name`. |
@@ -89,11 +99,16 @@ Each record is exactly the body Data Flow's inbound API already accepts
 
 ```json
 { "data": [
-  { "name": "entryId", "type": "string", "value": "EX-000-car_12" },
+  { "name": "entryId", "type": "key_id", "value": "car_12:1" },
+  { "name": "carId", "type": "key_id", "value": "car_12" },
   { "name": "owed", "type": "money", "currency": "EUR", "value": 24900 }
 ] }
 ```
 
+- `key_id` travels as `type: "key_id"`: a string (trimmed, 1–200 characters) or
+  a finite number. How keys relate comes from the approved manifest only. A
+  record item naming `parent` or `references` is refused. (Data Flow's own API,
+  which has no manifest, takes them inline on each item.)
 - `file` travels as `type: "string"` holding a base64 `data:` URI.
 - `files` travels as `type: "json"` holding an array of 1–20 such URIs.
 - Each file is at most 10 MB. A file anywhere other than a file field is refused.

@@ -1,8 +1,28 @@
 # Changelog
 
 Each release of the SDK is listed here, newest first, and tagged on GitHub as
-`v<version>`. Within a major version, releases only add things; see
+`v<version>`. Within a major version, releases only add things (1.2.0 is the one
+exception, explained there); see
 [Versions and releases](README.md#versions-and-releases).
+
+## 1.2.0 — 2026-10-16
+
+**Breaking, on purpose, inside v1.** No app had shipped against v1 yet, so Key
+IDs changed in place instead of starting `/v2/`. A 1.1 manifest is refused until
+it is updated as below. Data Flow then asks the user to approve it again.
+
+- **New `keys` list.** Declare every Key ID your records carry, once for the
+  whole app, and how they relate: `parent` (lives inside another) and
+  `references` (points at another). See the README, "Record IDs".
+- **New field type `key_id`.** It travels as `key_id`, holding a trimmed string
+  of 1–200 characters or a finite number.
+- **Every stream needs a `key`**, append streams included, and it must be a
+  `key_id` field. Records delivered twice then update instead of duplicating.
+- **One identity per record.** Every other `key_id` field in a stream must be an
+  ancestor of the stream's key (and is required with it) or one the key
+  references.
+- In Data Flow the user maps each of your keys onto their own Key IDs, but only
+  where their tree matches yours.
 
 ## 1.1.2 — 2026-10-16
 

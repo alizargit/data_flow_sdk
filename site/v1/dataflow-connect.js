@@ -30,7 +30,9 @@
 // VERSIONING. This file is served at /v1/ and every app that loads it gets the
 // current copy (Puter hosting sends no-store). So within v1 a change may only
 // ADD: a new optional manifest key, a looser rule, a new method. Anything that
-// would break an app already using v1 goes into /v2/ beside it.
+// would break an app already using v1 goes into /v2/ beside it. One exception,
+// 1.2.0: Key IDs became their own declared type before any app had shipped on
+// v1, so it changed v1 in place (CHANGELOG.md).
 
 import { defineManifest, ManifestError, LIMITS, MODES } from './lib/manifest.js';
 import { RecordError, toPayloads } from './lib/records.js';
@@ -40,7 +42,7 @@ import { DataFlowConnectElement, TEXT } from './lib/widget.js';
 import { FIELD_TYPES, CURRENCIES, DATE_PRECISIONS } from './lib/formats.js';
 import { IconError, ICON_MIN, ICON_SIZES } from './lib/icon.js';
 
-export const VERSION = '1.1.2';
+export const VERSION = '1.2.0';
 
 if (!customElements.get('dataflow-connect')) customElements.define('dataflow-connect', DataFlowConnectElement);
 

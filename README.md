@@ -27,12 +27,17 @@ Data Flow's side. See [CHANGELOG.md](CHANGELOG.md) for the current release and
       description: 'Orders from My App.',
       icon: '/assets/icon-512.png',                 // perfectly square, at least 64 px
     },
+    keys: [                                         // every Key ID your records carry
+      { name: 'customerId', label: 'Customer' },
+      { name: 'orderId', label: 'Order', parent: 'customerId' },
+    ],
     streams: [{
       id: 'orders', label: 'Orders', mode: 'append', key: 'orderId',
       fields: [
-        { name: 'orderId', type: 'string', required: true },
-        { name: 'placed',  type: 'date', precision: 'datetime' },
-        { name: 'total',   type: 'money', currency: 'EUR' },
+        { name: 'orderId',    type: 'key_id' },
+        { name: 'customerId', type: 'key_id' },
+        { name: 'placed',     type: 'date', precision: 'datetime' },
+        { name: 'total',      type: 'money', currency: 'EUR' },
       ],
     }],
   });
@@ -41,7 +46,7 @@ Data Flow's side. See [CHANGELOG.md](CHANGELOG.md) for the current release and
 
   conn.on('change', async ({ state }) => {
     if (state === 'on') await conn.send('orders', [
-      { orderId: 'PO-7', placed: '2026-08-02T14:30:00Z', total: 1250.5 },
+      { orderId: 'PO-7', customerId: 'C-12', placed: '2026-08-02T14:30:00Z', total: 1250.5 },
     ]);
   });
 </script>
@@ -65,40 +70,81 @@ Data Flow's side. See [CHANGELOG.md](CHANGELOG.md) for the current release and
 | `palette.label` | yes | 1–24 characters. | The palette's name in the menu, and the node's default name. |
 | `palette.description` | no | Up to 280 characters. | Shown on the consent page and in the node's panel. |
 | `palette.icon` | yes | See [The icon](#the-icon). | The palette's icon in the menu and on the canvas. |
+| `keys` | yes | 1–16. Every Key ID your records carry, each used by some stream. See [Record IDs](#record-ids). | Each becomes a Key ID in the user's Data Flow, or is mapped onto one of theirs. |
+| `key.name` | yes | Same rule as a field name. Unique. | The `key_id` fields of that name carry it. |
+| `key.label` | no | Up to 64 characters. | Shown on the consent page. |
+| `key.parent` | no | Another declared key. No cycles, at most 4 levels. | This key lives inside that one. |
+| `key.references` | no | Other declared keys, not its own ancestors or descendants. | This key points at those, without living inside them. |
 | `streams` | yes | 1–4. | One output port each, in this order. |
 | `stream.id` | yes | Lower-case letters, digits and `_`, starting with a letter, up to 32 characters. Unique. | How you name the stream in `send()` and `replace()`. Wires follow it if you reorder streams. |
 | `stream.label` | no | Up to 24 characters. Defaults to `id`. | The output port's label. |
 | `stream.mode` | no | `append` (default) or `snapshot`. | See [Keeping Data Flow up to date](#keeping-data-flow-up-to-date). |
-| `stream.key` | for `snapshot` | The name of a `string` or `number` field. That field becomes required. | The record's identity: a Table updates the row with the same key instead of adding a new one. |
+| `stream.key` | yes | The name of a `key_id` field. That field becomes required. | The record's identity: a Table updates the row with the same key instead of adding a new one. |
 | `field.name` | yes | 1–64 characters, no leading or trailing spaces. Unique in its stream. | The column's key, and the name records use. |
 | `field.label` | no | Up to 64 characters. | The column's heading in Data Flow, and the field's name on the consent page. Records still use `name`. |
-| `field.type` | yes | `string`, `boolean`, `number`, `date`, `money`, `json`, `file`, `files`. | The column's type. See the table below. |
+| `field.type` | yes | `string`, `boolean`, `number`, `date`, `money`, `json`, `key_id`, `file`, `files`. | The column's type. See the table below. |
 | `field.required` | no | `true` or `false` (default). | A record without it is refused. |
 | `field.currency` | for `money` | AED, AUD, CAD, CHF, CNY, EUR, GBP, JPY or USD. | Every amount for the field is in this currency. |
 | `field.precision` | no, `date` only | `date`, `time` or `datetime`. | Only that one date form is accepted. |
 
 ### Record IDs
 
-A stream's `key` field becomes a **Key ID** in Data Flow, the identity its Tables
-match rows on. Your app supplies the values. Data Flow never invents them.
+Your records' identities are **Key IDs** in Data Flow, which its Tables match
+rows on. Your app supplies the values. Data Flow never invents them.
 
-- **Keep values stable and unique.** The same record always sends the same value,
-  and no two records in a stream share one. A changed value is a different record.
-- **The user decides what the key means in their flow.** On your palette's page in
-  Data Flow they can:
-  - **map** your key onto one of their own Key IDs (say, your `contact_id` onto
-    their People `person_id`). Your values are then used as they are, so they must
-    match theirs to join the same records.
-  - leave it as **its own** Key ID. Data Flow then registers it under your field
-    name, and quietly keeps your values from colliding with another source's equal
-    values.
-- **Pick a distinctive field name.** Unmapped Key IDs are shared by field name, so
-  `contact_id` is a better name than `id`.
+**Declare every one in `keys`, with how they relate.** These are the same two
+relations Data Flow's own Key ID tree uses:
+
+```js
+keys: [
+  { name: 'carId',      label: 'Car' },
+  { name: 'investorId', label: 'Investor' },
+  { name: 'entryId',    label: 'Ledger entry', parent: 'carId', references: ['investorId'] },
+],
+```
+
+- **`parent`:** this key lives inside that one. A ledger entry belongs to one
+  car.
+- **`references`:** this key points at another without living inside it. An
+  entry names its investor.
+- **A key with neither is top level.**
+
+Then, in each stream:
+
+- **`key` is the record's identity.** It is a `key_id` field and always required.
+  Every stream has one.
+- **Every other `key_id` field must be related to it:** an ancestor of the key,
+  which is then required too, or one the key references. So each record has
+  exactly one identity. A value that identifies nothing (a free-text code) is a
+  `string`, not a `key_id`.
+
+The rules for values:
+
+- **Stable and unique.** The same record always sends the same value, and no two
+  records share one. A changed value is a different record.
+- **A child's values are unique on their own**, not only within the parent. Data
+  Flow matches on the child alone. Building it from the parent works well, for
+  example `car_12:1`.
+- **Pick distinctive names.** Unmapped Key IDs are shared by name, so `contactId`
+  is a better name than `id`.
+
+**The user decides what each key means in their flow.** In the Key ID banner on
+your palette's page in Data Flow, each key can be:
+- **mapped** onto one of their own Key IDs, where their tree matches yours:
+  - a top-level key maps onto a top-level Key ID of theirs;
+  - a key with children maps only onto a Key ID with children;
+  - a child maps only onto a child of the Key ID its parent was mapped onto.
+
+  Your values are then used as they are, so they must match theirs to join the
+  same records.
+- left as **its own** Key ID. Data Flow registers it under your name, in your
+  tree, and keeps your values from colliding with another source's equal values.
 
 ### What Data Flow accepts
 
 | Type | Value | Note |
 |---|---|---|
+| `key_id` | `"car_12:1"` or `42` | A declared key. A string must be trimmed and 1–200 characters; a number must be finite. |
 | `string` | `"Acme"` | |
 | `boolean` | `true` | Not `"true"`. |
 | `number` | `42` | Finite. |
@@ -192,9 +238,9 @@ has Data Flow open, and they wait for it while it's closed.
   Sending the same set twice changes nothing, so a snapshot is always safe to
   resend.
 - **`append`, with `send()`**: for events that happen once, such as an order
-  placed or a payment made. Each record is added. Give the stream a `key`: then
-  a record sent twice updates the row it already made, instead of adding a second
-  one.
+  placed or a payment made. Each record is added. Its `key` (every stream has
+  one) means a record sent twice updates the row it already made, instead of
+  adding a second one.
 
 **What a snapshot does in Data Flow.** Data Flow compares each snapshot with the
 previous one by `key`:
@@ -239,7 +285,7 @@ them.
 
 | `code` | Meaning | What to do |
 |---|---|---|
-| `network` | Data Flow couldn't be reached. | Retry later. A snapshot or a keyed stream makes the retry harmless. |
+| `network` | Data Flow couldn't be reached. | Retry later. Every stream is keyed, so the retry is harmless. |
 | `queue_full` | Too much is waiting to be collected. | Retry later. |
 | `not_connected` | The user switched the connection off. | Stop sending. The widget already shows it. |
 | `outdated` | Your manifest changed since the user approved it. | The user switches on again to re-approve. Until then nothing can be sent. |
@@ -304,7 +350,8 @@ for a v1 release.
 **Within `v1`, releases only add things:** new optional manifest keys, new methods,
 and rules that accept more than before. Nothing your app relies on is removed or
 tightened. A breaking change goes into a new `/v2/` folder beside `/v1/`, which
-keeps working.
+keeps working. **The one exception is 1.2.0.** It made Key IDs a declared type
+inside v1, before any app had shipped against it (see the CHANGELOG).
 
 **When a release goes live.** `https://dataflow-sdk.puter.site/v1/` is deployed
 from this repository at the same time a release is tagged. The hosted `/v1/`

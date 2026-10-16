@@ -105,10 +105,15 @@
   const manifest = {
     app: 'sample-ledger',
     palette: { label: 'Sample Ledger', description: 'Ledger entries from Sample Ledger.', icon },
+    keys: [
+      { name: 'carId', label: 'Car' },
+      { name: 'entryId', label: 'Entry', parent: 'carId' },
+    ],
     streams: [{
       id: 'ledger', label: 'Ledger', mode: 'snapshot', key: 'entryId',
       fields: [
-        { name: 'entryId', type: 'string', required: true },
+        { name: 'entryId', type: 'key_id' },
+        { name: 'carId', type: 'key_id' },
         { name: 'date', type: 'date', precision: 'date', required: true },
         { name: 'label', type: 'string' },
         { name: 'owed', type: 'money', currency: 'EUR' },
@@ -177,6 +182,7 @@
   const wide = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><rect width="300" height="200" fill="#999"/></svg>');
   try {
     await DataFlow.define({ ...manifest, palette: { ...manifest.palette, icon: wide },
+      keys: [...manifest.keys, { name: 'investorId', parent: 'investorId' }],
       streams: [{ ...manifest.streams[0], key: undefined, fields: [...manifest.streams[0].fields, { name: 'total', type: 'money', currency: 'XYZ' }] }] });
     show(document.getElementById('manifestOut'), 'Accepted (unexpected).', 'bad');
   } catch (e) {
@@ -185,17 +191,17 @@
 
   /* ---- record checks ---- */
   const good = [
-    { entryId: 'EX-000-car_12', date: '2026-08-02', label: 'Acquisition cost', owed: 24900 },
-    { entryId: 'EX-000-car_12-R', date: '2026-08-20', label: 'Acquisition cost (R)', paid: 24900, reconciled: true },
+    { entryId: 'car_12:1', carId: 'car_12', date: '2026-08-02', label: 'Acquisition cost', owed: 24900 },
+    { entryId: 'car_12:1:R', carId: 'car_12', date: '2026-08-20', label: 'Acquisition cost (R)', paid: 24900, reconciled: true },
   ];
   const wire = DataFlow.check(conn, 'ledger', good);
   show(document.getElementById('recordsOk'), `Accepted — the first record as Data Flow receives it:\n${JSON.stringify(wire[0], null, 2)}`, 'ok');
 
   const bad = [
-    { entryId: 'EX-001', date: '02/08/2026', owed: '24900' },
-    { entryId: 'EX-002', date: '2026-02-31', paid: 10.005, reconciled: 'true' },
+    { entryId: 'car_9:1', carId: 'car_9', date: '02/08/2026', owed: '24900' },
+    { entryId: ' car_9:2', carId: 'car_9', date: '2026-02-31', paid: 10.005, reconciled: 'true' },
     { date: '2026-08-02', colour: 'red', label: null },
-    { entryId: 'EX-001', date: new Date() },
+    { entryId: 'car_9:1', date: new Date() },
   ];
   try { DataFlow.check(conn, 'ledger', bad); }
   catch (e) { show(document.getElementById('recordsBad'), `${e.name} — nothing would be sent:\n${e.problems.map(p => '• ' + p).join('\n')}`, 'bad'); }

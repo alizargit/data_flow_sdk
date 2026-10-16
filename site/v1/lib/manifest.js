@@ -10,17 +10,35 @@
 //       description: 'Your investor ledger.', // the palette's info text
 //       icon: '/assets/icon-512.png',         // a perfectly square image (icon.js)
 //     },
+//     keys: [                                 // EVERY Key ID the records carry
+//       { name: 'carId',   label: 'Car' },
+//       { name: 'entryId', label: 'Entry', parent: 'carId' },
+//     ],
 //     streams: [{                             // one per output port on the palette
 //       id: 'ledger', label: 'Ledger',
 //       mode: 'snapshot',                     // or 'append'
-//       key: 'entryId',                       // the field Data Flow matches rows on
+//       key: 'entryId',                       // the record's identity: a key_id field
 //       fields: [
-//         { name: 'entryId', type: 'string', required: true },
+//         { name: 'entryId', type: 'key_id' },
+//         { name: 'carId',   type: 'key_id' },
 //         { name: 'date',    type: 'date', precision: 'date', required: true },
 //         { name: 'owed',    type: 'money', currency: 'EUR' },
 //       ],
 //     }],
 //   }
+//
+// KEYS (1.2.0). The app declares each of its Key IDs once, for the whole app,
+// and how they relate — the same two relations Data Flow's own Key ID tree has:
+//
+//   parent       this key lives inside that one (an entry inside a car). A
+//                child's values must still be unique ON THEIR OWN: Data Flow
+//                takes the most specific key as the identity.
+//   references   keys this one points at without living inside them (an entry
+//                naming its investor).
+//
+// A stream's `key` is its records' identity; every other key_id field it
+// carries must be an ancestor of that key or one the key references, so each
+// record has exactly one identity. Ancestors a stream carries are required too.
 //
 // The user approves THIS — the fields and their types — in Data Flow, so it is
 // also the limit of what the app may send. A record with a field the manifest
@@ -35,6 +53,7 @@ import { prepareIcon, IconError } from './icon.js';
 
 export const LIMITS = Object.freeze({
   label: 24, description: 280, fieldLabel: 64, fieldName: 64, streams: 4, fields: 64,
+  keys: 16, keyDepth: 4,
 });
 export const MODES = ['append', 'snapshot'];
 
@@ -67,6 +86,9 @@ export async function defineManifest(input) {
   const label = text(p.label, 'palette.label', LIMITS.label, true, problems);
   const description = text(p.description, 'palette.description', LIMITS.description, false, problems);
 
+  const keys = keyList(m.keys, problems);
+  const keyByName = new Map(keys.map(k => [k.name, k]));
+
   const streams = [];
   if (!Array.isArray(m.streams) || !m.streams.length) {
     problems.push('streams must be a non-empty array.');
@@ -75,11 +97,19 @@ export async function defineManifest(input) {
   } else {
     const ids = new Set();
     m.streams.forEach((s, i) => {
-      const st = stream(s, `streams[${i}]`, problems);
+      const st = stream(s, `streams[${i}]`, keyByName, problems);
       if (!st) return;
       if (ids.has(st.id)) problems.push(`streams[${i}].id "${st.id}" is used twice.`);
       ids.add(st.id);
       streams.push(st);
+    });
+    // Declared means used: a key no stream carries is a mistake in one or the
+    // other. Only once every stream is valid, or a broken one would list its
+    // keys here too.
+    if (streams.length === m.streams.length) keys.forEach(k => {
+      if (!streams.some(st => st.fields.some(f => f.type === 'key_id' && f.name === k.name))) {
+        problems.push(`keys: "${k.name}" is declared but no stream has a key_id field of that name.`);
+      }
     });
   }
 
@@ -92,7 +122,7 @@ export async function defineManifest(input) {
 
   if (problems.length) throw new ManifestError(problems);
 
-  const out = { app, palette: { label, description, icon: { menu: icon.menu, canvas: icon.canvas, source: icon.source } }, streams };
+  const out = { app, palette: { label, description, icon: { menu: icon.menu, canvas: icon.canvas, source: icon.source } }, keys, streams };
   out.hash = await hashOf(hashed(out));
   return deepFreeze(out);
 }
@@ -106,7 +136,78 @@ function hashed(m) {
   return { ...m, palette: { ...m.palette, icon: { source: m.palette.icon.source } } };
 }
 
-function stream(s, at, problems) {
+/* ---------- Keys ---------- */
+
+/** Every ancestor of `name`, nearest first (the list is already free of cycles). */
+function ancestorsOf(name, byName) {
+  const out = [];
+  let cur = byName.get(name);
+  while (cur && cur.parent && !out.includes(cur.parent)) { out.push(cur.parent); cur = byName.get(cur.parent); }
+  return out;
+}
+
+function keyList(list, problems) {
+  if (!Array.isArray(list) || !list.length) {
+    problems.push('keys must be a non-empty array: every Key ID your records carry, and how they relate (README, "Record IDs").');
+    return [];
+  }
+  if (list.length > LIMITS.keys) { problems.push(`keys may hold at most ${LIMITS.keys}.`); return []; }
+  const out = [];
+  const names = new Set();
+  list.forEach((k, i) => {
+    const at = `keys[${i}]`;
+    if (!isObj(k)) { problems.push(`${at} must be an object.`); return; }
+    const before = problems.length;
+    const name = nameOf(k.name, `${at}.name`, problems);
+    if (name && names.has(name)) problems.push(`${at}.name "${name}" is declared twice.`);
+    const o = { name };
+    if (k.label != null) o.label = text(k.label, `${at}.label`, LIMITS.fieldLabel, false, problems);
+    if (k.parent != null) {
+      if (typeof k.parent !== 'string' || !k.parent) problems.push(`${at}.parent must be the name of another key.`);
+      else o.parent = k.parent;
+    }
+    if (k.references != null) {
+      if (!Array.isArray(k.references) || !k.references.length || k.references.some(r => typeof r !== 'string' || !r)) {
+        problems.push(`${at}.references must be a non-empty array of key names.`);
+      } else if (new Set(k.references).size !== k.references.length) {
+        problems.push(`${at}.references names a key twice.`);
+      } else o.references = [...k.references];
+    }
+    if (problems.length > before) return;
+    names.add(name);
+    out.push(o);
+  });
+
+  const byName = new Map(out.map(k => [k.name, k]));
+  const before = problems.length;
+  out.forEach(k => {
+    if (!k.parent) return;
+    if (k.parent === k.name) problems.push(`keys: "${k.name}" cannot be its own parent.`);
+    else if (!byName.has(k.parent)) problems.push(`keys: "${k.name}" has parent "${k.parent}", which is not a declared key.`);
+  });
+  // Cycles and depth, by walking each key's parents.
+  out.forEach(k => {
+    const seen = [k.name];
+    let cur = k;
+    while (cur.parent && byName.has(cur.parent)) {
+      if (seen.includes(cur.parent)) { problems.push(`keys: "${k.name}" is inside itself (${[...seen, cur.parent].join(' → ')}).`); return; }
+      seen.push(cur.parent);
+      cur = byName.get(cur.parent);
+    }
+    if (seen.length > LIMITS.keyDepth) problems.push(`keys: "${k.name}" is ${seen.length} levels deep; at most ${LIMITS.keyDepth}.`);
+  });
+  if (problems.length > before) return out;
+
+  out.forEach(k => (k.references || []).forEach(r => {
+    if (r === k.name) problems.push(`keys: "${k.name}" cannot reference itself.`);
+    else if (!byName.has(r)) problems.push(`keys: "${k.name}" references "${r}", which is not a declared key.`);
+    else if (ancestorsOf(k.name, byName).includes(r)) problems.push(`keys: "${k.name}" already lives inside "${r}"; drop it from references.`);
+    else if (ancestorsOf(r, byName).includes(k.name)) problems.push(`keys: "${r}" lives inside "${k.name}", so "${k.name}" cannot reference it.`);
+  }));
+  return out;
+}
+
+function stream(s, at, keyByName, problems) {
   if (!isObj(s)) { problems.push(`${at} must be an object.`); return null; }
   const before = problems.length;
   const id = typeof s.id === 'string' ? s.id : '';
@@ -123,7 +224,7 @@ function stream(s, at, problems) {
   } else {
     const names = new Set();
     s.fields.forEach((f, j) => {
-      const fd = field(f, `${at}.fields[${j}]`, problems);
+      const fd = field(f, `${at}.fields[${j}]`, keyByName, problems);
       if (!fd) return;
       if (names.has(fd.name)) problems.push(`${at}.fields[${j}].name "${fd.name}" is used twice.`);
       names.add(fd.name);
@@ -132,29 +233,50 @@ function stream(s, at, problems) {
   }
 
   // The key is how Data Flow recognises a row it already has (its Key ID match).
-  // A snapshot REPLACES the stream's rows, which is only well-defined when every
-  // row can be told apart — so a snapshot stream must have one.
+  // Every stream has one (1.2.0): a snapshot REPLACES the stream's rows, which
+  // is only well-defined when every row can be told apart, and an append record
+  // delivered twice (a lost acknowledgement) is then an update, not a copy.
   let key = null;
-  if (s.key != null) {
+  if (s.key == null) {
+    problems.push(`${at}.key is required: the key_id field that is each record's identity.`);
+  } else {
     const kf = fields.find(f => f.name === s.key);
     if (!kf) problems.push(`${at}.key "${s.key}" is not one of its fields.`);
-    else if (kf.type !== 'string' && kf.type !== 'number') problems.push(`${at}.key must name a string or number field.`);
+    else if (kf.type !== 'key_id') problems.push(`${at}.key must name a key_id field.`);
     else { kf.required = true; key = kf.name; }
-  } else if (mode === 'snapshot') {
-    problems.push(`${at}.key is required for a snapshot stream: it is how Data Flow tells its rows apart.`);
+  }
+  // One identity per record: every other Key ID the stream carries is one of
+  // its key's ancestors (required with it) or a key it references.
+  if (key && keyByName.has(key)) {
+    const ancestors = ancestorsOf(key, keyByName);
+    const refs = keyByName.get(key).references || [];
+    fields.filter(f => f.type === 'key_id' && f.name !== key).forEach(f => {
+      if (ancestors.includes(f.name)) f.required = true;
+      else if (!refs.includes(f.name)) {
+        problems.push(`${at}: key_id "${f.name}" is not related to the stream's key "${key}". Make it an ancestor of "${key}" (parent) or list it in "${key}".references — or, if it is not an identity, send it as a string.`);
+      }
+    });
   }
 
   return problems.length > before ? null : { id, label, mode, key, fields };
 }
 
-function field(f, at, problems) {
+function nameOf(v, at, problems) {
+  const name = typeof v === 'string' ? v : '';
+  if (!name || name !== name.trim() || name.length > LIMITS.fieldName || CONTROL.test(name)) {
+    problems.push(`${at} must be a non-empty name of at most ${LIMITS.fieldName} characters, without leading or trailing spaces.`);
+  }
+  return name;
+}
+
+function field(f, at, keyByName, problems) {
   if (!isObj(f)) { problems.push(`${at} must be an object.`); return null; }
   const before = problems.length;
-  const name = typeof f.name === 'string' ? f.name : '';
-  if (!name || name !== name.trim() || name.length > LIMITS.fieldName || CONTROL.test(name)) {
-    problems.push(`${at}.name must be a non-empty name of at most ${LIMITS.fieldName} characters, without leading or trailing spaces.`);
-  }
+  const name = nameOf(f.name, `${at}.name`, problems);
   if (!FIELD_TYPES.includes(f.type)) problems.push(`${at}.type must be one of: ${FIELD_TYPES.join(', ')}.`);
+  if (f.type === 'key_id' && name && !keyByName.has(name)) {
+    problems.push(`${at}: key_id field "${name}" is not declared in keys.`);
+  }
   const out = { name, type: f.type, required: f.required === true };
   if (f.label != null) out.label = text(f.label, `${at}.label`, LIMITS.fieldLabel, false, problems);
 

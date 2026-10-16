@@ -2,12 +2,13 @@
 //
 // An app sends plain objects, one per record, keyed by field name:
 //
-//   { entryId: 'EX-000-car_12-ali', date: '2026-08-02', owed: 24900 }
+//   { entryId: 'car_12:1', carId: 'car_12', date: '2026-08-02', owed: 24900 }
 //
 // Each is checked against the stream's declared fields and turned into exactly
 // the body Data Flow's inbound contract accepts:
 //
-//   { data: [ { name: 'entryId', type: 'string', value: 'EX-000-car_12-ali' },
+//   { data: [ { name: 'entryId', type: 'key_id', value: 'car_12:1' },
+//             { name: 'carId', type: 'key_id', value: 'car_12' },
 //             { name: 'date', type: 'date', value: '2026-08-02' },
 //             { name: 'owed', type: 'money', currency: 'EUR', value: 24900 } ] }
 //
@@ -22,7 +23,7 @@
 
 import {
   isValidDate, DATE_EXAMPLES, fitsCurrency, CURRENCY_DECIMALS,
-  fileProblem, carriesFile, MAX_FILES_PER_FIELD,
+  fileProblem, carriesFile, MAX_FILES_PER_FIELD, keyIdProblem,
 } from './formats.js';
 
 const MAX_LISTED = 50;
@@ -100,6 +101,10 @@ function valueProblem(f, v) {
       if (typeof v !== 'string') return `must be a string, not ${kind(v)}.`;
       if (carriesFile(v)) return 'holds a file. Declare the field as type "file" to send one.';
       return '';
+    case 'key_id': {
+      const why = keyIdProblem(v);
+      return why ? `${why}${typeof v === 'string' || typeof v === 'number' ? '' : `, not ${kind(v)}`}: it is a Key ID.` : '';
+    }
     case 'boolean':
       return v === true || v === false ? '' : `must be true or false, not ${kind(v)}.`;
     case 'number':
@@ -158,7 +163,7 @@ function kind(v) {
   if (v instanceof Date) return 'a Date object (send its ISO string)';
   if (typeof v === 'string') return `the string ${show(v)}`;
   if (typeof v === 'number' && !isFinite(v)) return String(v);
-  return `a ${typeof v}`;
+  return typeof v === 'object' ? 'an object' : `a ${typeof v}`;
 }
 
 const show = v => {
