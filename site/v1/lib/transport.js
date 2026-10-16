@@ -62,6 +62,19 @@ export const isSignedIn = () => {
   try { return !!globalThis.puter.auth.isSignedIn(); } catch { return false; }
 };
 
+/** Does the worker list `app-connect` on GET /? Asked once per page, and only after a 404. */
+let connectRoutes = null;
+async function hasConnectRoutes() {
+  if (connectRoutes === null) {
+    try {
+      const r = await fetch(settings.apiUrl + '/', { credentials: 'omit' });
+      const info = await r.json();
+      connectRoutes = Array.isArray(info.features) && info.features.includes('app-connect');
+    } catch { return false; /* unknown: say unsupported, ask again next time */ }
+  }
+  return connectRoutes;
+}
+
 /** POST one route; resolves to its JSON body or rejects with a ConnectError. */
 async function call(path, body) {
   let res;
@@ -76,10 +89,15 @@ async function call(path, body) {
   }
   let data = null;
   try { data = await res.json(); } catch { /* not JSON */ }
-  // The worker's catch-all answers 404 for a route it does not have: a Data
-  // Flow deployed before connections existed. Said plainly, not as an error.
+  // A 404 is either a Data Flow without connections (the worker's catch-all
+  // answers routes it does not have) or a real "not found" from a connection
+  // route. The worker's GET / lists `app-connect` among its features once it
+  // has the routes, so that is asked before saying which.
   if (res.status === 404) {
-    throw new ConnectError('This Data Flow cannot accept app connections yet.', 'unsupported');
+    if (!(await hasConnectRoutes())) {
+      throw new ConnectError('This Data Flow cannot accept app connections yet.', 'unsupported');
+    }
+    throw new ConnectError((data && data.error) || 'Data Flow could not find what this app asked for.', (data && data.code) || 'not_found');
   }
   if (res.status === 401) throw new ConnectError('Sign in to Puter to connect to Data Flow.', 'signin');
   if (!res.ok || !data || data.ok === false) {

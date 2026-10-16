@@ -4,9 +4,8 @@ The contract between the SDK (`site/v1/`) and Data Flow. The SDK implements the
 app side. Data Flow implements the rest: its worker (`dataflow-api`), a consent
 page and a "connected app" input palette.
 
-**Status:** both sides are built. Data Flow's side is on its `sdk_compat` branch
-and isn't deployed yet. Until it is, every route below answers 404 and the widget
-shows *"This Data Flow cannot accept app connections yet."*
+**Status:** both sides are live. `GET https://dataflow-api.puter.work/` lists
+`app-connect` among its `features`.
 
 Data Flow's worker also has routes that only Data Flow itself calls: `pending`,
 `answer`, `list`, `collect`, `ack` and `forget`. They are not part of this contract.
@@ -115,7 +114,7 @@ All are `POST` to `https://dataflow-api.puter.work`, carry a JSON body, and use
 | Status | When |
 |---|---|
 | 401 | No Puter session. The SDK shows "Sign in". |
-| 404 | The route doesn't exist (Data Flow without connections). The SDK shows "unavailable". |
+| 404 | Either the route doesn't exist (a Data Flow without connections) or a connection route didn't find something. The SDK tells them apart with `GET /`, whose `features` list includes `app-connect` once the routes exist, and shows "unavailable" only for the first. |
 | 4xx with `{ ok: false, error, code }` | Refused. `error` is shown to the user as-is, so write it for them. |
 
 The `code` values the SDK reacts to are `not_connected` and `outdated`. On

@@ -128,6 +128,8 @@ stable, or users will be asked again.
   ```js
   conn.mount(el, { lang: 'pt' });   // 'pt', 'pt-PT' and 'pt-BR' all choose Portuguese
   ```
+  Without its own `lang`, the widget follows `<html lang>` as it changes, so an
+  app with a language switch that sets `<html lang>` needs to do nothing more.
 - **Your own words.** `options.text` (or the element's `text` property) replaces
   any string. Keys are listed in `DataFlow.TEXT.en`. A value is text, or a
   function of your palette label:

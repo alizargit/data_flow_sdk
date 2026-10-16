@@ -154,6 +154,13 @@ export class DataFlowConnectElement extends HTMLElement {
 
   attributeChangedCallback() { this.#render(); }
 
+  // Without a `lang` of its own, the widget speaks the page's language — and an
+  // app that switches it (an EN/PT toggle setting <html lang>) switches the
+  // widget with it.
+  #htmlLang = new MutationObserver(() => { if (!this.hasAttribute('lang')) this.#render(); });
+  connectedCallback() { this.#htmlLang.observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] }); this.#render(); }
+  disconnectedCallback() { this.#htmlLang.disconnect(); }
+
   /** The Connection this widget shows and drives (from DataFlow.define()). */
   get connection() { return this.#conn; }
   set connection(conn) {

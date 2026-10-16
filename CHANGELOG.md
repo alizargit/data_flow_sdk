@@ -4,6 +4,15 @@ Each release of the SDK is listed here, newest first, and tagged on GitHub as
 `v<version>`. Within a major version, releases only add things; see
 [Versions and releases](README.md#versions-and-releases).
 
+## 1.1.1 — 2026-10-15
+
+- The widget follows `<html lang>` as it changes, when it has no `lang` of its
+  own.
+- A 404 from Data Flow is checked against `GET /`'s `features`: "cannot accept
+  app connections yet" is shown only when `app-connect` is missing. Any other
+  404 is reported as what it is, with `code: 'not_found'`.
+- Data Flow's worker with the connection routes is live.
+
 ## 1.1.0 — 2026-10-15
 
 - **The widget speaks Portuguese.** `conn.mount(el, { lang: 'pt' })`, a `lang`
