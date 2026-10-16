@@ -1,6 +1,6 @@
 # Data Flow SDK
 
-Lets a Puter app send its users' data into **their own**
+Lets Users on puter.com send their data from an app on Puter to **their own**
 [Data Flow](https://dataflow.puter.site). Each app becomes an input palette there,
 which the user approves.
 
@@ -76,6 +76,24 @@ Data Flow's side. See [CHANGELOG.md](CHANGELOG.md) for the current release and
 | `field.required` | no | `true` or `false` (default). | A record without it is refused. |
 | `field.currency` | for `money` | AED, AUD, CAD, CHF, CNY, EUR, GBP, JPY or USD. | Every amount for the field is in this currency. |
 | `field.precision` | no, `date` only | `date`, `time` or `datetime`. | Only that one date form is accepted. |
+
+### Record IDs
+
+A stream's `key` field becomes a **Key ID** in Data Flow, the identity its Tables
+match rows on. Your app supplies the values. Data Flow never invents them.
+
+- **Keep values stable and unique.** The same record always sends the same value,
+  and no two records in a stream share one. A changed value is a different record.
+- **The user decides what the key means in their flow.** On your palette's page in
+  Data Flow they can:
+  - **map** your key onto one of their own Key IDs (say, your `contact_id` onto
+    their People `person_id`). Your values are then used as they are, so they must
+    match theirs to join the same records.
+  - leave it as **its own** Key ID. Data Flow then registers it under your field
+    name, and quietly keeps your values from colliding with another source's equal
+    values.
+- **Pick a distinctive field name.** Unmapped Key IDs are shared by field name, so
+  `contact_id` is a better name than `id`.
 
 ### What Data Flow accepts
 
