@@ -86,9 +86,13 @@ const CSS = `
 .panel {
   --df-brand: #2e4057; --df-brand-hover: #243447; --df-accent: #f29e4c;
   --df-ink: #ffffff; --df-ink-dim: rgba(255, 255, 255, .74); --df-track: rgba(255, 255, 255, .24);
+  /* A mid-bright edge in the panel's own hue: it keeps the navy from melting
+     into a dark or navy page, and stays a quiet line on a light one. */
+  --df-edge: #6f88a8;   /* contrast: 2.9 on #2e4057, 4.0 on #1e293b, 5.2 on #111, 3.6 on #fff */
   display: flex; align-items: center; gap: 12px;
   min-height: 64px; box-sizing: border-box; padding: 10px 14px 10px 10px;
   background: var(--df-brand); color: var(--df-ink);
+  border: 1px solid var(--df-edge);
   border-radius: 10px; box-shadow: 0 1px 2px rgba(29, 37, 48, .18);
 }
 .icon { width: 44px; height: 44px; flex-shrink: 0; border-radius: 10px; display: block; }

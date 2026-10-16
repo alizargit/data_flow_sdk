@@ -40,7 +40,7 @@ import { DataFlowConnectElement, TEXT } from './lib/widget.js';
 import { FIELD_TYPES, CURRENCIES, DATE_PRECISIONS } from './lib/formats.js';
 import { IconError, ICON_MIN, ICON_SIZES } from './lib/icon.js';
 
-export const VERSION = '1.1.1';
+export const VERSION = '1.1.2';
 
 if (!customElements.get('dataflow-connect')) customElements.define('dataflow-connect', DataFlowConnectElement);
 

@@ -4,6 +4,11 @@ Each release of the SDK is listed here, newest first, and tagged on GitHub as
 `v<version>`. Within a major version, releases only add things; see
 [Versions and releases](README.md#versions-and-releases).
 
+## 1.1.2 — 2026-10-16
+
+- The widget has a 1 px mid-bright border (`#6f88a8`, a lighter shade of its own
+  navy), so the panel stays distinct on a dark page or one in the same navy.
+
 ## 1.1.1 — 2026-10-15
 
 - The widget follows `<html lang>` as it changes, when it has no `lang` of its
